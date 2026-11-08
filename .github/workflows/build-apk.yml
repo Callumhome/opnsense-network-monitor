@@ -41,10 +41,10 @@ jobs:
 
           permission = '<uses-permission android:name="android.permission.INTERNET"/>'
           if permission not in content:
-              content = re.sub(r"(<manifest\\b[^>]*>)", r"\\1\\n    " + permission, content, count=1)
+              content = re.sub(r"(<manifest\b[^>]*>)", r"\1\n    " + permission, content, count=1)
 
           content = re.sub(
-              r'<application\\b([^>]*)>',
+              r'<application\b([^>]*)>',
               lambda m: '<application' + m.group(1) + (
                   ' android:usesCleartextTraffic="true"'
                   if 'android:usesCleartextTraffic=' not in m.group(1)
