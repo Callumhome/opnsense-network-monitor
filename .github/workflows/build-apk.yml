@@ -28,6 +28,35 @@ jobs:
           flutter create --platforms=android --project-name opnsense_network_monitor android_scaffold
           cp -a android_scaffold/android ./android
 
+      - name: Configure Android network permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text()
+
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+          if permission not in content:
+              content = content.replace("<manifest", "<manifest\\n    " + permission, 1)
+
+          # The app connects to the user-configured backend over HTTP.
+          content = re.sub(
+              r'<application\\b([^>]*)>',
+              lambda m: '<application' + m.group(1) + (
+                  ' android:usesCleartextTraffic="true"'
+                  if 'android:usesCleartextTraffic=' not in m.group(1)
+                  else ''
+              ) + '>',
+              content,
+              count=1,
+          )
+
+          manifest.write_text(content)
+          print("Configured INTERNET permission and cleartext HTTP for backend connectivity.")
+          PY
+
       - name: Build release APK
         run: flutter build apk --release
 
