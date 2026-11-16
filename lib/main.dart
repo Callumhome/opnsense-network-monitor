@@ -90,6 +90,7 @@ class _MonitorHomeState extends State<MonitorHome> {
   List<Vlan> vlans = [];
   bool loading = false;
   String? error;
+  String? vlanError;
   int tab = 0;
   Timer? timer;
 
@@ -136,25 +137,38 @@ class _MonitorHomeState extends State<MonitorHome> {
           .map((e) => Device.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      List<Vlan>? vlanList;
+      // Load VLANs separately so a VLAN API/parsing issue is visible
+      // and never silently leaves the Overview showing an old/empty list.
+      List<Vlan> vlanList = [];
+      String? vlanLoadError;
       try {
         final vlanResponse = await http
             .get(Uri.parse('$baseUrl/api/vlans'))
             .timeout(const Duration(seconds: 20));
-        if (vlanResponse.statusCode == 200) {
-          final vlanJson = jsonDecode(vlanResponse.body) as Map<String, dynamic>;
-          vlanList = (vlanJson['vlans'] as List<dynamic>)
-              .map((e) => Vlan.fromJson(e as Map<String, dynamic>))
-              .toList();
+        if (vlanResponse.statusCode != 200) {
+          throw Exception('VLAN API HTTP ${vlanResponse.statusCode}: ${vlanResponse.body}');
         }
-      } catch (_) {
-        // VLAN support is optional; device monitoring remains available.
+        final decodedVlans = jsonDecode(vlanResponse.body);
+        if (decodedVlans is! Map<String, dynamic> ||
+            decodedVlans['vlans'] is! List) {
+          throw const FormatException('VLAN API response does not contain a vlans list');
+        }
+        vlanList = (decodedVlans['vlans'] as List)
+            .whereType<Map<String, dynamic>>()
+            .map(Vlan.fromJson)
+            .toList();
+        if (vlanList.isEmpty) {
+          throw const FormatException('VLAN API returned an empty VLAN list');
+        }
+      } catch (e) {
+        vlanLoadError = e.toString();
       }
 
       if (mounted) {
         setState(() {
           devices = list;
-          if (vlanList != null) vlans = vlanList!;
+          vlans = vlanList;
+          vlanError = vlanLoadError;
           loading = false;
         });
       }
@@ -499,19 +513,26 @@ class _MonitorHomeState extends State<MonitorHome> {
             ),
             const SizedBox(height: 18),
             _sectionTitle('Networks', '${vlans.length} VLANs'),
-            if (vlans.isEmpty)
+            if (vlanError != null)
               _panel(
-                child: const Text('VLAN information is not available yet.',
+                child: Text(
+                  'Could not load VLANs: $vlanError',
+                  style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
+                ),
+              )
+            else if (vlans.isEmpty)
+              _panel(
+                child: const Text('No VLANs were returned by the backend.',
                     style: TextStyle(color: muted)),
               )
             else
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: vlans.map((vlan) => SizedBox(
-                  width: double.infinity,
-                  child: _networkCard(vlan),
-                )).toList(),
+              Column(
+                children: vlans
+                    .map((vlan) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _networkCard(vlan),
+                        ))
+                    .toList(),
               ),
             const SizedBox(height: 18),
           ],
