@@ -91,6 +91,7 @@ class _MonitorHomeState extends State<MonitorHome> {
   bool loading = false;
   String? error;
   int tab = 0;
+  bool showAllVlans = false;
   Timer? timer;
 
   @override
@@ -498,7 +499,11 @@ class _MonitorHomeState extends State<MonitorHome> {
               ],
             ),
             const SizedBox(height: 18),
-            _sectionTitle('Networks', 'VIEW ALL  →'),
+            _sectionTitle(
+              'Networks',
+              showAllVlans ? 'SHOW LESS  ↑' : 'VIEW ALL  →',
+              onTrailingTap: () => setState(() => showAllVlans = !showAllVlans),
+            ),
             if (vlans.isEmpty)
               _panel(
                 child: const Text('VLAN information is not available yet.',
@@ -508,7 +513,7 @@ class _MonitorHomeState extends State<MonitorHome> {
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: vlans.map((vlan) => SizedBox(
+                children: (showAllVlans ? vlans : vlans.take(1).toList()).map((vlan) => SizedBox(
                   width: (MediaQuery.of(context).size.width - 42) / 2,
                   child: _networkCard(vlan),
                 )).toList(),
@@ -653,7 +658,7 @@ class _MonitorHomeState extends State<MonitorHome> {
         ),
       );
 
-  Widget _sectionTitle(String title, String trailing) => Padding(
+  Widget _sectionTitle(String title, String trailing, {VoidCallback? onTrailingTap}) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
         child: Row(
           children: [
@@ -666,14 +671,29 @@ class _MonitorHomeState extends State<MonitorHome> {
                 ),
               ),
             ),
-            Text(
-              trailing,
-              style: const TextStyle(
-                fontSize: 10,
-                color: muted,
-                fontWeight: FontWeight.w700,
+            if (onTrailingTap == null)
+              Text(
+                trailing,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: muted,
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else
+              TextButton(
+                onPressed: onTrailingTap,
+                style: TextButton.styleFrom(
+                  foregroundColor: muted,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  trailing,
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                ),
               ),
-            ),
           ],
         ),
       );
