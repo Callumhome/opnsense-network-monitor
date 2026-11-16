@@ -59,6 +59,22 @@ class Device {
             : null;
 }
 
+class Vlan {
+  final int id;
+  final String name, subnet, gateway;
+  final int deviceCount, online, offline;
+  const Vlan({required this.id, required this.name, required this.subnet, required this.gateway, required this.deviceCount, required this.online, required this.offline});
+  factory Vlan.fromJson(Map<String, dynamic> j) => Vlan(
+    id: (j['vlan_id'] as num?)?.toInt() ?? 0,
+    name: '${j['name'] ?? 'Unknown network'}',
+    subnet: '${j['subnet'] ?? ''}',
+    gateway: '${j['gateway'] ?? ''}',
+    deviceCount: (j['device_count'] as num?)?.toInt() ?? 0,
+    online: (j['online'] as num?)?.toInt() ?? 0,
+    offline: (j['offline'] as num?)?.toInt() ?? 0,
+  );
+}
+
 class MonitorHome extends StatefulWidget {
   const MonitorHome({super.key});
 
@@ -71,6 +87,7 @@ class _MonitorHomeState extends State<MonitorHome> {
   String filter = 'All networks';
   String query = '';
   List<Device> devices = [];
+  List<Vlan> vlans = [];
   bool loading = false;
   String? error;
   int tab = 0;
@@ -119,9 +136,25 @@ class _MonitorHomeState extends State<MonitorHome> {
           .map((e) => Device.fromJson(e as Map<String, dynamic>))
           .toList();
 
+      List<Vlan>? vlanList;
+      try {
+        final vlanResponse = await http
+            .get(Uri.parse('$baseUrl/api/vlans'))
+            .timeout(const Duration(seconds: 20));
+        if (vlanResponse.statusCode == 200) {
+          final vlanJson = jsonDecode(vlanResponse.body) as Map<String, dynamic>;
+          vlanList = (vlanJson['vlans'] as List<dynamic>)
+              .map((e) => Vlan.fromJson(e as Map<String, dynamic>))
+              .toList();
+        }
+      } catch (_) {
+        // VLAN support is optional; device monitoring remains available.
+      }
+
       if (mounted) {
         setState(() {
           devices = list;
+          if (vlanList != null) vlans = vlanList!;
           loading = false;
         });
       }
@@ -174,6 +207,13 @@ class _MonitorHomeState extends State<MonitorHome> {
 
   int networkOnline(String name) =>
       devices.where((d) => d.network == name && d.online).length;
+
+  Vlan? vlanForNetwork(String name) {
+    for (final vlan in vlans) {
+      if (vlan.name == name) return vlan;
+    }
+    return null;
+  }
 
   Future<void> settings() async {
     final controller = TextEditingController(text: baseUrl);
@@ -459,25 +499,20 @@ class _MonitorHomeState extends State<MonitorHome> {
             ),
             const SizedBox(height: 18),
             _sectionTitle('Networks', 'VIEW ALL  →'),
-            Row(
-              children: [
-                Expanded(
-                  child: _networkCard(
-                    'Legacy LAN',
-                    '192.168.1.0/24',
-                    Icons.hub_rounded,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _networkCard(
-                    'New LAN',
-                    '192.168.10.0/24',
-                    Icons.hub_rounded,
-                  ),
-                ),
-              ],
-            ),
+            if (vlans.isEmpty)
+              _panel(
+                child: const Text('VLAN information is not available yet.',
+                    style: TextStyle(color: muted)),
+              )
+            else
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: vlans.map((vlan) => SizedBox(
+                  width: (MediaQuery.of(context).size.width - 42) / 2,
+                  child: _networkCard(vlan),
+                )).toList(),
+              ),
             const SizedBox(height: 18),
           ],
         ),
@@ -522,51 +557,35 @@ class _MonitorHomeState extends State<MonitorHome> {
         ),
       );
 
-  Widget _networkCard(String name, String subnet, IconData icon) {
-    final total = networkTotal(name);
-    final up = networkOnline(name);
-    final ratio = total == 0 ? 0.0 : up / total;
-
-    return Container(
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(17),
-        color: panel,
-        border: Border.all(color: const Color(0xFF263945)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: green, size: 22),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
+  Widget _networkCard(Vlan vlan) {
+    final total = vlan.deviceCount;
+    final ratio = total == 0 ? 0.0 : vlan.online / total;
+    return InkWell(
+      onTap: () => setState(() { filter = vlan.name; tab = 1; }),
+      borderRadius: BorderRadius.circular(17),
+      child: Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(17),
+          color: panel,
+          border: Border.all(color: const Color(0xFF263945)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.hub_rounded, color: green, size: 22),
+            const SizedBox(width: 8),
+            Expanded(child: Text('VLAN ${vlan.id}', style: const TextStyle(color: green, fontWeight: FontWeight.w800, fontSize: 11))),
+            Text('$total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          ]),
+          const SizedBox(height: 5),
+          Text(vlan.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+          const SizedBox(height: 5),
+          Text(vlan.subnet, style: const TextStyle(color: muted, fontSize: 10)),
+          const SizedBox(height: 8),
+          Text('${vlan.online} online  •  ${vlan.offline} offline', style: const TextStyle(fontSize: 10, color: muted)),
           const SizedBox(height: 6),
-          Text(subnet, style: const TextStyle(color: muted, fontSize: 11)),
-          const SizedBox(height: 10),
-          Text('$up / $total online', style: const TextStyle(fontSize: 11)),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: ratio,
-              minHeight: 6,
-              color: green,
-              backgroundColor: const Color(0xFF263945),
-            ),
-          ),
-        ],
+          ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: ratio, minHeight: 6, color: green, backgroundColor: const Color(0xFF263945))),
+        ]),
       ),
     );
   }
@@ -598,8 +617,11 @@ class _MonitorHomeState extends State<MonitorHome> {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: ['All networks', 'Legacy LAN', 'New LAN', 'Other']
-                    .map((name) {
+                children: [
+                  'All networks',
+                  ...vlans.map((vlan) => vlan.name),
+                  'Other',
+                ].toSet().toList().map((name) {
                   final selected = filter == name;
 
                   return Padding(
@@ -869,6 +891,11 @@ class _MonitorHomeState extends State<MonitorHome> {
               _detailRow('IP address', d.ip, Icons.lan_rounded),
               _detailRow('MAC address', d.mac, Icons.fingerprint_rounded),
               _detailRow('Network', d.network, Icons.hub_rounded),
+              if (vlanForNetwork(d.network) != null) ...[
+                _detailRow('VLAN ID', '${vlanForNetwork(d.network)!.id}', Icons.tag_rounded),
+                _detailRow('Subnet', vlanForNetwork(d.network)!.subnet, Icons.lan_rounded),
+                _detailRow('Gateway', vlanForNetwork(d.network)!.gateway, Icons.router_rounded),
+              ],
               _detailRow(
                 'Response time',
                 d.latency == null
@@ -981,23 +1008,14 @@ class _MonitorHomeState extends State<MonitorHome> {
             _panel(
               child: Column(
                 children: [
-                  _insightRow(
-                    'Legacy LAN',
-                    networkOnline('Legacy LAN'),
-                    networkTotal('Legacy LAN'),
-                  ),
-                  const Divider(color: Color(0xFF263945), height: 24),
-                  _insightRow(
-                    'New LAN',
-                    networkOnline('New LAN'),
-                    networkTotal('New LAN'),
-                  ),
-                  const Divider(color: Color(0xFF263945), height: 24),
-                  _insightRow(
-                    'Other networks',
-                    networkOnline('Other'),
-                    networkTotal('Other'),
-                  ),                ],
+                  ...vlans.map((vlan) => Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: _insightRow('VLAN ${vlan.id} • ${vlan.name}', vlan.online, vlan.deviceCount),
+                  )),
+                  if (vlans.isNotEmpty)
+                    const Divider(color: Color(0xFF263945), height: 12),
+                  _insightRow('Other / unclassified', networkOnline('Other'), networkTotal('Other')),
+                ],
               ),
             ),
             const SizedBox(height: 12),
