@@ -91,7 +91,6 @@ class _MonitorHomeState extends State<MonitorHome> {
   bool loading = false;
   String? error;
   int tab = 0;
-  bool showAllVlans = false;
   Timer? timer;
 
   @override
@@ -499,11 +498,7 @@ class _MonitorHomeState extends State<MonitorHome> {
               ],
             ),
             const SizedBox(height: 18),
-            _sectionTitle(
-              'Networks',
-              showAllVlans ? 'SHOW LESS  ↑' : 'VIEW ALL  →',
-              onTrailingTap: () => setState(() => showAllVlans = !showAllVlans),
-            ),
+            _sectionTitle('Networks', '${vlans.length} VLANs'),
             if (vlans.isEmpty)
               _panel(
                 child: const Text('VLAN information is not available yet.',
@@ -513,8 +508,8 @@ class _MonitorHomeState extends State<MonitorHome> {
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: (showAllVlans ? vlans : vlans.take(1).toList()).map((vlan) => SizedBox(
-                  width: (MediaQuery.of(context).size.width - 42) / 2,
+                children: vlans.map((vlan) => SizedBox(
+                  width: double.infinity,
                   child: _networkCard(vlan),
                 )).toList(),
               ),
